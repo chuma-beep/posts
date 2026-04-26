@@ -1,6 +1,14 @@
 'use client'
 
 import { useState, useEffect, useRef } from "react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Separator } from "@/components/ui/separator"
+import { Download, Save, Trash2, GitBranch, Loader2 } from "lucide-react"
 import readingTime from 'reading-time'
 
 type Post = {
@@ -20,6 +28,11 @@ export default function Editor() {
   const [tags, setTags] = useState('')
   const [content, setContent] = useState('')
   const [lastSaved, setLastSaved] = useState<string | null>(null)
+  const [wordCount, setWordCount] = useState(0)
+  const [saving, setSaving] = useState(false)
+  const [savedRemotely, setSavedRemotely] = useState(false)
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     const saved = localStorage.getItem('post-draft')
@@ -38,6 +51,53 @@ export default function Editor() {
     setLastSaved(new Date().toLocaleTimeString())
   }, [title, category, tags, content])
 
+  useEffect(() => {
+    const words = content.trim().split(/\s+/).filter(Boolean).length
+    setWordCount(words)
+  }, [content])
+
+  const handleSave = async () => {
+    if (!title) {
+      alert('Please add a title')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const readTimeResult = readingTime(content)
+      const post: Post = {
+        id: Date.now(),
+        title,
+        author: 'k1_bot',
+        date: new Date().toISOString().split('T')[0],
+        category,
+        readTime: readTimeResult.text,
+        content,
+        tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+      }
+
+      const res = await fetch('/api/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(post),
+      })
+
+      if (!res.ok) throw new Error('Failed to save')
+
+      setSavedRemotely(true)
+      localStorage.removeItem('post-draft')
+      setTitle('')
+      setTags('')
+      setCategory('')
+      setContent('')
+      alert('Post saved to GitHub!')
+    } catch (error) {
+      alert('Failed to save post')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleDownload = () => {
     if (!title) {
       alert('Please add a title')
@@ -53,7 +113,7 @@ export default function Editor() {
       category,
       readTime: readTimeResult.text,
       content,
-      tags: tags.split(',').map(t => t.trim()),
+      tags: tags.split(',').map(t => t.trim()).filter(Boolean),
     }
 
     const blob = new Blob([JSON.stringify(post, null, 2)], { type: 'application/json' })
@@ -64,7 +124,6 @@ export default function Editor() {
     a.click()
     URL.revokeObjectURL(url)
 
-    alert('Post downloaded!')
     localStorage.removeItem('post-draft')
     setTitle('')
     setTags('')
@@ -72,55 +131,115 @@ export default function Editor() {
     setContent('')
   }
 
+  const handleClear = () => {
+    if (confirm('Are you sure you want to clear the editor? This cannot be undone.')) {
+      localStorage.removeItem('post-draft')
+      setTitle('')
+      setTags('')
+      setCategory('')
+      setContent('')
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-black flex flex-col items-center p-4">
-      <div className="w-full max-w-3xl">
-        <h1 className="text-2xl font-bold text-white mb-4">Write Post</h1>
-
-        <input
-          type="text"
-          placeholder="Title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="border p-2 w-full text-white bg-gray-800 mb-2 rounded"
-        />
-        <input
-          type="text"
-          placeholder="Category"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="border p-2 w-full text-white bg-gray-800 mb-2 rounded"
-        />
-        <input
-          type="text"
-          placeholder="Tags (comma-separated)"
-          value={tags}
-          onChange={(e) => setTags(e.target.value)}
-          className="border p-2 w-full text-white bg-gray-800 mb-4 rounded"
-        />
-
-        {lastSaved && (
-          <div className="bg-gray-800 text-white p-2 rounded-lg mb-4 text-sm">
-            Auto-saved: {lastSaved}
+    <div className="max-w-3xl mx-auto space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Write a Post</CardTitle>
+          <CardDescription>Create a new post. Your work is auto-saved locally.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="title">Title</Label>
+            <Input
+              id="title"
+              placeholder="Enter post title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
           </div>
-        )}
 
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="Write your post content here (Markdown supported)..."
-          className="w-full h-96 p-4 bg-gray-800 text-white rounded-lg font-mono"
-        />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="category">Category</Label>
+              <Input
+                id="category"
+                placeholder="e.g., Tech, Life"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tags">Tags</Label>
+              <Input
+                id="tags"
+                placeholder="comma-separated"
+                value={tags}
+                onChange={(e) => setTags(e.target.value)}
+              />
+            </div>
+          </div>
 
-        <div className="mt-6 flex gap-3 justify-end">
-          <button
-            onClick={handleDownload}
-            className="bg-green-500 hover:bg-green-600 text-white py-2 px-6 rounded-lg"
-          >
-            Download JSON
-          </button>
-        </div>
-      </div>
+          {tags && (
+            <div className="flex flex-wrap gap-2">
+              {tags.split(',').map((tag, i) => tag.trim() && (
+                <Badge key={i} variant="secondary">{tag.trim()}</Badge>
+              ))}
+            </div>
+          )}
+
+          <Separator />
+
+          <div className="space-y-2">
+            <Label htmlFor="content">Content</Label>
+            <Textarea
+              id="content"
+              ref={textareaRef}
+              placeholder="Write your post content here (Markdown supported)..."
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="min-h-[400px] font-mono"
+            />
+          </div>
+
+          <div className="flex justify-between text-sm text-muted-foreground">
+            <span>{wordCount} words</span>
+            <span>{readingTime(content).text}</span>
+          </div>
+        </CardContent>
+        <CardFooter className="flex justify-between">
+          <Button variant="outline" size="sm" onClick={handleClear}>
+            <Trash2 className="mr-2 h-4 w-4" />
+            Clear
+          </Button>
+          <div className="flex gap-2">
+            {lastSaved && !savedRemotely && (
+              <span className="text-sm text-muted-foreground flex items-center">
+                <Save className="mr-1 h-3 w-3" />
+                {lastSaved}
+              </span>
+            )}
+            {savedRemotely && (
+              <span className="text-sm text-green-500 flex items-center">
+                <GitBranch className="mr-1 h-3 w-3" />
+                Saved
+              </span>
+            )}
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <GitBranch className="mr-2 h-4 w-4" />
+              )}
+              Save to GitHub
+            </Button>
+            <Button variant="secondary" onClick={handleDownload}>
+              <Download className="mr-2 h-4 w-4" />
+              Download
+            </Button>
+          </div>
+        </CardFooter>
+      </Card>
     </div>
   )
 }
